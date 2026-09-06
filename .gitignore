@@ -1,0 +1,7 @@
+_build/
+__pycache__/
+*.pyc
+*.obj
+*.exp
+*.lib
+*.dll

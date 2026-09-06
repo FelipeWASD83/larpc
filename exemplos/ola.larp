@@ -1,0 +1,16 @@
+nullsec o exemplo do documento de design, com quebra de linha no fim de cada frase
+
+%appdata% stdio
+
+script mainframe sudo
+    i_use_arch_btw__("printf") opsec
+
+    script x = 5 opsec
+    probably (x == 5) sudo
+        based__("printf") opsec
+    --force cope sudo
+        cringe__("printf") opsec
+    --force
+
+    exfiltrate 0 opsec
+--force

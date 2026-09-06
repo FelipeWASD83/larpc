@@ -1,0 +1,53 @@
+nullsec calculadora -- etapa 1 do roadmap do LarpC
+nullsec le uma conta por linha, no formato: numero operador numero
+nullsec qualquer coisa que nao for isso encerra o programa
+
+%appdata% stdio
+
+vibes calcular payload(vibes a, npc operacao, vibes b) sudo
+    probably (operacao == '+') sudo
+        exfiltrate a + b opsec
+    --force
+    cope probably (operacao == '-') sudo
+        exfiltrate a - b opsec
+    --force
+    cope probably (operacao == '*') sudo
+        exfiltrate a * b opsec
+    --force
+    cope probably (operacao == '/') sudo
+        exfiltrate a / b opsec
+    --force
+    exfiltrate 0 opsec
+--force
+
+script mainframe sudo
+    vibes a opsec
+    vibes b opsec
+    vibes resultado opsec
+    npc operacao opsec
+    script lidos opsec
+
+    calculadora_do_larpc__("printf") opsec
+    operacoes_pct_c_pct_c_pct_c_pct_c__("printf", '+', '-', '*', '/') opsec
+    uma_conta_por_linha__("printf") opsec
+
+    doomscroll (based) sudo
+        conta_("printf") opsec
+        lidos = pct_f_pct_c_pct_f("scanf", doxx a, doxx operacao, doxx b) opsec
+
+        probably (lidos != 3) sudo
+            unplug opsec
+        --force
+
+        probably (operacao == '/' && b == 0) sudo
+            dividir_por_zero_e_o_teu_opsec__("printf") opsec
+            persist opsec
+        --force
+
+        resultado = calcular(a, operacao, b) opsec
+        pct_2f__("printf", resultado) opsec
+    --force
+
+    ate_mais_bro__("printf") opsec
+    exfiltrate 0 opsec
+--force
