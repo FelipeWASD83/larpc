@@ -71,6 +71,31 @@ class TesteDecodificador(unittest.TestCase):
     def test_pct_no_meio_de_palavra_nao_conta(self):
         self.assertEqual(decodificar_identificador("expct_d"), "expct d")
 
+    def test_simbolo_ascii(self):
+        self.assertEqual(decodificar_identificador("ascii_ponto"), ".")
+
+    def test_simbolos_ascii_grudados(self):
+        self.assertEqual(
+            decodificar_identificador("ascii_pontoascii_pontoascii_ponto"), "..."
+        )
+
+    def test_ascii_pega_o_nome_mais_longo(self):
+        self.assertEqual(decodificar_identificador("ascii_abrechave"), "{")
+        self.assertEqual(decodificar_identificador("ascii_abre"), "(")
+
+    def test_ascii_junto_de_texto_e_formato(self):
+        self.assertEqual(
+            decodificar_identificador("ascii_tubo_pct_d_ascii_tubo"), "| %d |"
+        )
+
+    def test_ascii_escapa_o_que_o_c_exige(self):
+        self.assertEqual(decodificar_identificador("ascii_aspas"), '\\"')
+        self.assertEqual(decodificar_identificador("ascii_contrabarra"), "\\\\")
+
+    def test_ascii_desconhecido_reclama(self):
+        with self.assertRaises(ValueError):
+            decodificar_identificador("ascii_naoexiste")
+
 
 class TesteSwap(unittest.TestCase):
     def test_swap_simples(self):
@@ -258,6 +283,36 @@ class TesteDePontaAPonta(unittest.TestCase):
         saida = self.rodar_larp("calculadora.larp", "5 / 0\nsair\n")
         self.assertEqual(saida.returncode, 0, saida.stderr)
         self.assertIn("dividir por zero", saida.stdout)
+
+    def test_xadrez_passa_no_proprio_auto_teste(self):
+        """O xadrez tem auto-teste embutido na opcao 4 do menu.
+
+        Sao 27 conferencias das regras -- promocao por distancia, roque, en
+        passant, mate sem borda, area ativa -- feitas por dentro, sem
+        depender de digitar lance nenhum.
+        """
+        saida = self.rodar_larp("xadrez.larp", "4\n")
+        self.assertIn("passou tudo", saida.stdout, saida.stdout[-3000:])
+        self.assertNotIn("FALHOU", saida.stdout)
+        self.assertEqual(saida.returncode, 0, saida.stderr)
+
+    def test_xadrez_comeca_na_posicao_padrao(self):
+        saida = self.rodar_larp("xadrez.larp", "1\n1\nsair\n")
+        self.assertEqual(saida.returncode, 0, saida.stderr)
+        self.assertIn("  8   .   r   n   b   q   k   b   n   r   .", saida.stdout)
+        self.assertIn("  1   .   R   N   B   Q   K   B   N   R   .", saida.stdout)
+
+    def test_xadrez_a_ia_responde_ao_jogador(self):
+        saida = self.rodar_larp("xadrez.larp", "1\n1\n5 2 5 4\nsair\n")
+        self.assertEqual(saida.returncode, 0, saida.stderr)
+        self.assertIn("ia jogou:", saida.stdout)
+        # o peao do jogador saiu de (5,2) e chegou em (5,4)
+        self.assertIn("  4   .   .   .   .   .   P   .   .   .   .", saida.stdout)
+
+    def test_xadrez_recusa_lance_ilegal(self):
+        saida = self.rodar_larp("xadrez.larp", "1\n1\n5 2 5 7\nsair\n")
+        self.assertEqual(saida.returncode, 0, saida.stderr)
+        self.assertIn("esse lance nao existe", saida.stdout)
 
 
 if __name__ == "__main__":

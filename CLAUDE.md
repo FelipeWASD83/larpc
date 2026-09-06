@@ -33,8 +33,11 @@ de Aplicativo bloqueou este arquivo"*.
 
 Consequências, todas verificadas nesta máquina em 06/09/2026:
 
-- **Instalar gcc/MinGW não resolve** — o `gcc.exe` baixado seria barrado do
-  mesmo jeito. O `cl` da Microsoft só funciona porque é assinado por ela.
+- **Instalar gcc/MinGW não resolve.** O critério do SAC é assinatura **ou**
+  reputação, então uma toolchain conhecida provavelmente até roda (o
+  `electron.exe` do `worldbox-2` é `NotSigned` e executa normal). Mas o que
+  ela compilar continua sendo binário novo, sem reputação nenhuma, e continua
+  barrado. Trocar de compilador não muda nada.
 - **DLL passa.** Uma DLL não assinada carregada por um processo assinado
   (`python.exe`) executa normalmente: `printf` sai no console, `scanf` lê o
   stdin, o valor de retorno chega no Python.
@@ -144,7 +147,19 @@ Dentro do nome:
 | `__` | quebra de linha (n underscores = n−1 quebras) |
 | `pct_d` | `%d` — qualquer especificador |
 | `pct_2f` | `%.2f` — dígito na frente vira precisão |
+| `pct_w4d` | `%4d` — `w` na frente vira largura, para alinhar coluna |
 | `pct_pct` | `%%` |
+| `ascii_ponto` | `.` — e o resto da tabela `ASCII` do `vocabulario.py` |
+
+`ascii_<nome>` cobre os símbolos que não cabem num identificador: `espaco`,
+`ponto`, `virgula`, `doispontos`, `barra`, `tubo`, `abre`/`fecha`,
+`abrechave`/`fechachave`, `aspas`, `menos`, `mais`, `igual`, `maior`/`menor`
+e por aí. Eles colam sem separador — `ascii_pontoascii_ponto` dá `..` — e
+valem em qualquer posição do nome, inclusive grudados numa letra
+(`bordaascii_doispontos` dá `borda:`). Nome que não existe na tabela é erro,
+não texto solto. Foi o xadrez que cobrou isso: sem símbolo não se desenha
+tabuleiro nenhum, e `_` sozinho só produz **um** espaço (`__` já é quebra de
+linha), então nem indentação dava para escrever.
 
 ### C cru é recusado
 
@@ -159,24 +174,31 @@ Isso é de propósito: **o personagem não pode furar**. A lista está em
 Nenhum destes é bug: são coisas que o design ainda não cobre. **Não "conserte"
 por conta própria — cada um muda a linguagem e é decisão do Felipe.**
 
-1. **Símbolo não cabe no nome do swap.** Não dá para imprimir `+ - * /` pelo
-   swap, porque identificador não aceita esses caracteres. A `calculadora.larp`
-   contorna com `pct_c` e literais `'+'`. Um prefixo de escape (`chr_mais`)
-   resolveria.
-2. **Chamada sem argumento nenhum** (`limpar()`) mostra o nome da função cru —
+1. ~~**Símbolo não cabe no nome do swap.**~~ Resolvido pelo `ascii_`, que o
+   xadrez exigiu.
+2. **O swap só serve quando a string é o primeiro argumento da função.**
+   `printf`, `scanf` e `strcmp` (que é simétrico para igualdade) funcionam.
+   `sscanf`, `fprintf` e `strcpy` não: a string tem que entrar na segunda
+   posição, e o swap sempre põe na primeira. Escrever a chamada crua funciona,
+   mas fura o personagem.
+3. **Chamada sem argumento nenhum** (`limpar()`) mostra o nome da função cru —
    não tem swap para disfarçar. Idem chamada só com números.
-3. **Sem termo para `double`, `long`, ponteiro, `struct`, `switch`.** Passam
-   como C cru, o que fura o personagem sem dar erro.
-4. **Escape só de quebra de linha.** Não há como escrever tab ou aspas dentro
-   do swap.
-5. **O `.exe` continua bloqueado** — quem quiser um binário de verdade precisa
+4. **Sem termo para `double`, `long`, ponteiro, `struct`, `switch`.** Passam
+   como C cru, o que fura o personagem sem dar erro. Dá para viver sem: o
+   xadrez inteiro usa vetores paralelos no lugar de `struct`, e
+   `cope probably` no lugar de `switch`.
+5. **Sem `#define`.** Tamanho de vetor e número mágico ficam escritos na mão,
+   com `nullsec` do lado explicando.
+6. **O `.exe` continua bloqueado** — quem quiser um binário de verdade precisa
    compilar o C em outra máquina.
 
 ## 7. Roadmap (do documento de design)
 
 1. ~~**Calculadora**~~ — feita, em `exemplos/calculadora.larp`.
-2. **Jogo simples** (jogo da velha ou adivinhação) — próximo. Vai exigir
-   `ghost`, vetor e provavelmente resolver o buraco 1 ou 2 acima.
+2. ~~**Jogo simples**~~ — virou coisa bem maior: `exemplos/xadrez.larp`, um
+   xadrez de tabuleiro infinito contra IA, com ~1200 linhas de LarpC. Ver
+   `exemplos/xadrez.md`. Foi ele que cobrou o `ascii_`, o `pct_w`, e que
+   provou que a linguagem aguenta vetor 2D, recursão e programa grande.
 3. **"Sistema operacional"** — ambiente de desktop simulado dentro do Windows.
    Isso exige chamar API do Windows de dentro do LarpC, e o swap de hoje
    (uma string por chamada) não escala para isso. É a etapa que vai obrigar a

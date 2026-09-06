@@ -42,7 +42,11 @@ Exemplos prontos em `exemplos/`:
 ```
 larpc exemplos\ola.larp
 larpc exemplos\calculadora.larp
+larpc exemplos\xadrez.larp
 ```
+
+O `xadrez.larp` e um xadrez de tabuleiro infinito contra IA, escrito inteiro
+em LarpC -- as regras, o minimax e a tela. Ver `exemplos/xadrez.md`.
 
 ## O truque do swap
 
@@ -54,7 +58,9 @@ total_pct_d_itens__("printf", n)     ->   printf("total %d itens\n", n)
 ```
 
 Dentro do nome: `_` vira espaço, `__` vira quebra de linha, `pct_d` vira
-`%d` (e `pct_2f` vira `%.2f`).
+`%d` (`pct_2f` vira `%.2f`, `pct_w4d` vira `%4d`) e `ascii_ponto` vira `.` —
+esse último cobre todos os símbolos que não cabem num identificador, de
+`ascii_espaco` a `ascii_abrechave`. `larpc vocabulario` lista tudo.
 
 ## As palavras
 

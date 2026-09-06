@@ -27,6 +27,44 @@ PALAVRAS = {
     "doxx": "&",
 }
 
+# Simbolos que nao cabem num identificador, para usar dentro do nome do swap:
+# `ascii_ponto` vira `.`. Sem isso nao da para desenhar nada em texto -- foi
+# o xadrez que cobrou, porque tabuleiro precisa de ponto, barra e tubo.
+ASCII = {
+    "espaco": " ",
+    "ponto": ".",
+    "virgula": ",",
+    "doispontos": ":",
+    "pontoevirgula": ";",
+    "mais": "+",
+    "menos": "-",
+    "vezes": "*",
+    "barra": "/",
+    "contrabarra": "\\\\",
+    "igual": "=",
+    "maior": ">",
+    "menor": "<",
+    "hash": "#",
+    "tubo": "|",
+    "til": "~",
+    "circunflexo": "^",
+    "abre": "(",
+    "fecha": ")",
+    "abrecolchete": "[",
+    "fechacolchete": "]",
+    "abrechave": "{",
+    "fechachave": "}",
+    "aspas": '\\"',
+    "apostrofo": "'",
+    "exclamacao": "!",
+    "interrogacao": "?",
+    "arroba": "@",
+    "cifrao": "$",
+    "ecomercial": "&",
+    "sublinhado": "_",
+    "tab": "\\t",
+}
+
 # Palavras que precisam de tratamento com contexto, tratadas no transpilador:
 #   mainframe   -> main (ou larpc_main_real, quando o alvo e DLL)
 #   payload(    -> (          lista de parametros

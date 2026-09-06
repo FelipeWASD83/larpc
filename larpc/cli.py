@@ -12,7 +12,7 @@ from .executor import (
 )
 from .lexer import ErroDeLarp
 from .msvc import SemCompilador
-from .vocabulario import CONTRABANDO, PALAVRAS
+from .vocabulario import ASCII, CONTRABANDO, PALAVRAS
 
 COMANDOS = ("rodar", "ver", "c", "vocabulario")
 
@@ -113,6 +113,11 @@ def _mostrar_vocabulario():
     print("%-16s %s" % ("_", "espaco"))
     print("%-16s %s" % ("__", "quebra de linha"))
     print("%-16s %s" % ("pct_d", "%d (pct_2f vira %.2f, pct_pct vira %%)"))
+    print("%-16s %s" % ("pct_w4d", "%4d, para alinhar coluna"))
+    print("%-16s %s" % ("ascii_ponto", ". e os outros simbolos:"))
+    nomes = sorted(ASCII)
+    for inicio in range(0, len(nomes), 5):
+        print("      " + "  ".join(nomes[inicio:inicio + 5]))
     print()
     print("C cru que o larpc recusa, e o termo que ele quer no lugar:")
     for cru in sorted(CONTRABANDO):

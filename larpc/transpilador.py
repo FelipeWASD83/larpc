@@ -11,6 +11,7 @@ import re
 
 from .lexer import ErroDeLarp, tokenizar
 from .vocabulario import (
+    ASCII,
     CONTRABANDO,
     CONTROLE_C,
     MODIFICADORES,
@@ -18,12 +19,25 @@ from .vocabulario import (
     TIPOS,
 )
 
-# `pct_d` -> `%d`, `pct_2f` -> `%.2f`, `pct_pct` -> `%%`.
-_RE_PCT = re.compile(r"pct_(pct|[0-9]*l?[a-z])")
+# `pct_d` -> `%d`, `pct_2f` -> `%.2f` (precisao), `pct_w4d` -> `%4d`
+# (largura, para alinhar coluna), `pct_pct` -> `%%`.
+_RE_PCT = re.compile(r"pct_(pct|w[0-9]+l?[a-z]|[0-9]*l?[a-z])")
+# `ascii_ponto` -> `.`. Os nomes mais longos primeiro, senao `ascii_abre`
+# come o comeco de `ascii_abrechave`.
+_RE_ASCII = re.compile(
+    "ascii_(" + "|".join(sorted(ASCII, key=len, reverse=True)) + ")"
+)
 _RE_IDENT_C = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 _COLAR_ANTES = {")", "]", ",", ";", "++", "--", ".", "->"}
 _COLAR_DEPOIS = {"(", "[", "!", "~", ".", "->"}
+
+# Depois destes, um `-` ou `+` e sinal, nao operacao: sai `-1` e nao `- 1`.
+_ANTES_DE_SINAL = {
+    "(", "[", "{", ",", ";", "=", "==", "!=", "<", ">", "<=", ">=",
+    "+", "-", "*", "/", "%", "&&", "||", "!", "?", ":",
+    "+=", "-=", "*=", "/=", "%=", "return",
+}
 
 NOME_MAIN_DLL = "larpc_main_real"
 
@@ -53,24 +67,46 @@ def decodificar_identificador(ident):
 
     Um underscore vira espaco. Dois ou mais viram quebra de linha (n
     underscores = n-1 quebras). `pct_d` e companhia viram especificador de
-    formato, para caber printf formatado dentro da piada.
+    formato, para caber printf formatado dentro da piada, e `ascii_ponto` e
+    companhia viram os simbolos que nao cabem num identificador.
     """
     partes = []
     i = 0
     tamanho = len(ident)
+    # Um escape termina uma palavra, entao `ascii_pontoascii_ponto` da `..`.
+    # Sem isso nao daria para grudar dois simbolos sem um espaco no meio.
+    apos_escape = False
     while i < tamanho:
-        if (i == 0 or ident[i - 1] == "_") and ident.startswith("pct_", i):
+        no_comeco_de_palavra = i == 0 or ident[i - 1] == "_" or apos_escape
+        apos_escape = False
+        if no_comeco_de_palavra and ident.startswith("pct_", i):
             casamento = _RE_PCT.match(ident, i)
             if casamento:
                 spec = casamento.group(1)
                 if spec == "pct":
                     partes.append("%%")
+                elif spec[0] == "w":
+                    partes.append("%" + spec[1:])
                 elif spec[0].isdigit():
                     partes.append("%." + spec)
                 else:
                     partes.append("%" + spec)
                 i = casamento.end()
+                apos_escape = True
                 continue
+        # `ascii_` vale em qualquer posicao, ao contrario de `pct_`: ninguem
+        # escreve a palavra "ascii" no meio de uma frase por acaso, e sem
+        # isso nao da para grudar simbolo em letra (`bordaascii_doispontos`).
+        if ident.startswith("ascii_", i):
+            casamento = _RE_ASCII.match(ident, i)
+            if not casamento:
+                raise ValueError(
+                    "nao existe simbolo `ascii_%s`" % ident[i + 6:].split("_")[0]
+                )
+            partes.append(ASCII[casamento.group(1)])
+            i = casamento.end()
+            apos_escape = True
+            continue
         if ident[i] == "_":
             fim = i
             while fim < tamanho and ident[fim] == "_":
@@ -190,12 +226,15 @@ def _emitir(saidas, texto, linha, colar_antes=None, colar_depois=None):
         colar_antes = texto in _COLAR_ANTES
     if colar_depois is None:
         colar_depois = texto in _COLAR_DEPOIS
-    if texto == "(" and not colar_antes and saidas:
+    if texto in ("(", "[") and not colar_antes and saidas:
         anterior = saidas[-1]
         cola = anterior.texto not in CONTROLE_C and (
             _RE_IDENT_C.match(anterior.texto) or anterior.texto in (")", "]")
         )
         colar_antes = bool(cola)
+    if texto in ("-", "+") and not colar_depois:
+        vazio = not saidas
+        colar_depois = vazio or saidas[-1].texto in _ANTES_DE_SINAL
     saidas.append(_Saida(texto, linha, colar_antes, colar_depois))
 
 
@@ -264,7 +303,11 @@ def _tentar_swap(tokens, i, saidas, arquivo):
             arquivo,
         )
 
-    conteudo = decodificar_identificador(tok.texto)
+    try:
+        conteudo = decodificar_identificador(tok.texto)
+    except ValueError as erro:
+        raise ErroDeLarp(str(erro), tok.linha, tok.coluna, arquivo)
+
     _emitir(saidas, nome_real, tok.linha)
     _emitir(saidas, "(", tok.linha, colar_antes=True, colar_depois=True)
     _emitir(saidas, '"' + conteudo + '"', tok.linha)

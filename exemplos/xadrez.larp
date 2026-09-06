@@ -1,0 +1,1414 @@
+nullsec =====================================================================
+nullsec  XADREZ INFINITO -- etapa 2 do roadmap do LarpC
+nullsec
+nullsec  Tabuleiro sem bordas: as casas seguem para sempre nos quatro lados.
+nullsec  As pecas comecam exatamente onde comecam no xadrez padrao, em x de 1
+nullsec  a 8 e y de 1 a 8, e dali em diante o mundo e aberto.
+nullsec
+nullsec  O que muda por nao existir borda:
+nullsec   - peao promove depois de andar 6 casas (a mesma distancia do padrao,
+nullsec     so que contada da casa onde ele nasceu, nao de uma fileira fixa)
+nullsec   - quem ficar so com o rei perde na hora, senao o perdedor fugiria
+nullsec     para sempre e a partida nunca acabaria
+nullsec   - 50 lances sem captura e sem peao da empate, como no xadrez
+nullsec
+nullsec  As pecas so podem se mover dentro da area ativa: a caixa que contem
+nullsec  todas as pecas mais tres casas de folga. A area cresce sozinha
+nullsec  conforme o jogo se espalha. Sem isso uma torre no vazio teria
+nullsec  infinitos lances legais e nao daria nem para listar, quanto mais
+nullsec  para a IA procurar.
+nullsec =====================================================================
+
+%appdata% stdio
+%appdata% stdlib
+%appdata% string
+
+nullsec ---- tipos de peca: 1 peao, 2 cavalo, 3 bispo, 4 torre, 5 dama, 6 rei
+nullsec ---- cores: 0 brancas, 1 pretas
+nullsec ---- indices fixos: rei branco e a peca 4, rei preto e a peca 20
+
+ghost script px[32] opsec
+ghost script py[32] opsec
+ghost script ptipo[32] opsec
+ghost script pcor[32] opsec
+ghost script pviva[32] opsec
+ghost script pmoveu[32] opsec
+ghost script pavanco[32] opsec
+
+nullsec casa que ficou passavel de en passant, e o peao que deixou ela
+ghost script ep_x opsec
+ghost script ep_y opsec
+ghost script ep_peca opsec
+
+nullsec lances sem captura e sem peao, para a regra dos 50
+ghost script seco opsec
+
+nullsec area ativa: a caixa onde as pecas podem se mexer
+ghost script area_x1 opsec
+ghost script area_y1 opsec
+ghost script area_x2 opsec
+ghost script area_y2 opsec
+
+nullsec ---- listas de lances, uma por nivel de profundidade ----
+nullsec especial: 0 normal, 1 roque curto, 2 roque longo, 3 en passant, 4 promocao
+ghost script lpeca[8][512] opsec
+ghost script lx[8][512] opsec
+ghost script ly[8][512] opsec
+ghost script lesp[8][512] opsec
+ghost script lnota[8][512] opsec
+
+nullsec ---- pilha de desfazer, uma entrada por nivel ----
+ghost script u_peca[8] opsec
+ghost script u_x[8] opsec
+ghost script u_y[8] opsec
+ghost script u_cap[8] opsec
+ghost script u_moveu[8] opsec
+ghost script u_avanco[8] opsec
+ghost script u_tipo[8] opsec
+ghost script u_torre[8] opsec
+ghost script u_torre_x[8] opsec
+ghost script u_ep_x[8] opsec
+ghost script u_ep_y[8] opsec
+ghost script u_ep_peca[8] opsec
+ghost script u_seco[8] opsec
+
+nullsec ---- historico do jogo de verdade, para desfazer ----
+nullsec guarda a posicao inteira antes de cada lance: e mais memoria do que
+nullsec desfazer ao contrario, mas nao tem como sair errado
+ghost script h_x[128][32] opsec
+ghost script h_y[128][32] opsec
+ghost script h_tipo[128][32] opsec
+ghost script h_viva[128][32] opsec
+ghost script h_moveu[128][32] opsec
+ghost script h_avanco[128][32] opsec
+ghost script h_ep[128][3] opsec
+ghost script h_seco[128] opsec
+ghost script h_total opsec
+
+nullsec ---- tabelas ----
+nullsec dir 0 a 3 e torre, 4 a 7 e bispo, os oito juntos sao dama e rei
+ghost script dir_x[8] = sudo 1, -1, 0, 0, 1, 1, -1, -1 --force opsec
+ghost script dir_y[8] = sudo 0, 0, 1, -1, 1, -1, 1, -1 --force opsec
+ghost script cav_x[8] = sudo 1, 2, 2, 1, -1, -2, -2, -1 --force opsec
+ghost script cav_y[8] = sudo 2, 1, -1, -2, -2, -1, 1, 2 --force opsec
+ghost script ordem[8] = sudo 4, 2, 3, 5, 6, 3, 2, 4 --force opsec
+ghost script valor[7] = sudo 0, 100, 320, 330, 500, 900, 20000 --force opsec
+ghost npc letra_branca[7] = sudo '?', 'P', 'N', 'B', 'R', 'Q', 'K' --force opsec
+ghost npc letra_preta[7] = sudo '?', 'p', 'n', 'b', 'r', 'q', 'k' --force opsec
+
+nullsec ---- ajustes da partida ----
+nullsec cor_do_jogador = -1 quer dizer que as duas cores sao da IA
+ghost script cor_do_jogador opsec
+ghost script lances_jogados opsec
+ghost script profundidade opsec
+ghost script vez opsec
+
+
+nullsec =====================================================================
+nullsec  utilidades
+nullsec =====================================================================
+
+script sinal payload(script n) sudo
+    probably (n > 0) sudo
+        exfiltrate 1 opsec
+    --force
+    probably (n < 0) sudo
+        exfiltrate -1 opsec
+    --force
+    exfiltrate 0 opsec
+--force
+
+script maior payload(script a, script b) sudo
+    probably (a > b) sudo
+        exfiltrate a opsec
+    --force
+    exfiltrate b opsec
+--force
+
+script menor payload(script a, script b) sudo
+    probably (a < b) sudo
+        exfiltrate a opsec
+    --force
+    exfiltrate b opsec
+--force
+
+nullsec distancia de rei: quantos lances um rei levaria para ir de um ponto
+nullsec ao outro num tabuleiro vazio
+script distancia payload(script x1, script y1, script x2, script y2) sudo
+    exfiltrate maior(abs(x2 - x1), abs(y2 - y1)) opsec
+--force
+
+script peca_em payload(script x, script y) sudo
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] && px[i] == x && py[i] == y) sudo
+            exfiltrate i opsec
+        --force
+    --force
+    exfiltrate -1 opsec
+--force
+
+script rei_de payload(script cor) sudo
+    probably (cor == 0) sudo
+        exfiltrate 4 opsec
+    --force
+    exfiltrate 20 opsec
+--force
+
+nullsec para onde o peao daquela cor anda
+script frente payload(script cor) sudo
+    probably (cor == 0) sudo
+        exfiltrate 1 opsec
+    --force
+    exfiltrate -1 opsec
+--force
+
+zeroday colocar payload(script i, script tipo, script cor, script x, script y) sudo
+    ptipo[i] = tipo opsec
+    pcor[i] = cor opsec
+    px[i] = x opsec
+    py[i] = y opsec
+    pviva[i] = 1 opsec
+    pmoveu[i] = 0 opsec
+    pavanco[i] = 0 opsec
+--force
+
+zeroday montar sudo
+    grindset (script i = 0; i < 8; i++) sudo
+        colocar(i, ordem[i], 0, i + 1, 1) opsec
+        colocar(i + 8, 1, 0, i + 1, 2) opsec
+        colocar(i + 16, ordem[i], 1, i + 1, 8) opsec
+        colocar(i + 24, 1, 1, i + 1, 7) opsec
+    --force
+    ep_x = 0 opsec
+    ep_y = 0 opsec
+    ep_peca = -1 opsec
+    seco = 0 opsec
+    h_total = 0 opsec
+    vez = 0 opsec
+--force
+
+nullsec a caixa onde as pecas tem permissao de se mexer: tudo que esta em
+nullsec jogo, mais tres casas de folga para os lados
+zeroday atualizar_area sudo
+    script achou = 0 opsec
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0) sudo
+            persist opsec
+        --force
+        probably (achou == 0) sudo
+            area_x1 = px[i] opsec
+            area_x2 = px[i] opsec
+            area_y1 = py[i] opsec
+            area_y2 = py[i] opsec
+            achou = 1 opsec
+        --force cope sudo
+            area_x1 = menor(area_x1, px[i]) opsec
+            area_x2 = maior(area_x2, px[i]) opsec
+            area_y1 = menor(area_y1, py[i]) opsec
+            area_y2 = maior(area_y2, py[i]) opsec
+        --force
+    --force
+    area_x1 = area_x1 - 3 opsec
+    area_y1 = area_y1 - 3 opsec
+    area_x2 = area_x2 + 3 opsec
+    area_y2 = area_y2 + 3 opsec
+--force
+
+script dentro_da_area payload(script x, script y) sudo
+    probably (x < area_x1 || x > area_x2 || y < area_y1 || y > area_y2) sudo
+        exfiltrate 0 opsec
+    --force
+    exfiltrate 1 opsec
+--force
+
+
+nullsec =====================================================================
+nullsec  ataque e xeque
+nullsec =====================================================================
+
+script caminho_livre payload(script x1, script y1, script x2, script y2) sudo
+    script dx = sinal(x2 - x1) opsec
+    script dy = sinal(y2 - y1) opsec
+    script cx = x1 + dx opsec
+    script cy = y1 + dy opsec
+    doomscroll (cx != x2 || cy != y2) sudo
+        probably (peca_em(cx, cy) >= 0) sudo
+            exfiltrate 0 opsec
+        --force
+        cx = cx + dx opsec
+        cy = cy + dy opsec
+    --force
+    exfiltrate 1 opsec
+--force
+
+nullsec a peca i ataca a casa (x, y)? ataque, nao lance legal: nao olha se o
+nullsec proprio rei fica pendurado, e o peao so ataca na diagonal
+script ataca payload(script i, script x, script y) sudo
+    script dx = x - px[i] opsec
+    script dy = y - py[i] opsec
+    script tipo = ptipo[i] opsec
+
+    probably (dx == 0 && dy == 0) sudo
+        exfiltrate 0 opsec
+    --force
+
+    probably (tipo == 1) sudo
+        probably (abs(dx) == 1 && dy == frente(pcor[i])) sudo
+            exfiltrate 1 opsec
+        --force
+        exfiltrate 0 opsec
+    --force
+
+    probably (tipo == 2) sudo
+        probably (abs(dx) * abs(dy) == 2) sudo
+            exfiltrate 1 opsec
+        --force
+        exfiltrate 0 opsec
+    --force
+
+    probably (tipo == 6) sudo
+        probably (abs(dx) <= 1 && abs(dy) <= 1) sudo
+            exfiltrate 1 opsec
+        --force
+        exfiltrate 0 opsec
+    --force
+
+    script reto = 0 opsec
+    probably (dx == 0 || dy == 0) sudo
+        reto = 1 opsec
+    --force
+    script diagonal = 0 opsec
+    probably (abs(dx) == abs(dy)) sudo
+        diagonal = 1 opsec
+    --force
+
+    probably (tipo == 4 && reto == 0) sudo
+        exfiltrate 0 opsec
+    --force
+    probably (tipo == 3 && diagonal == 0) sudo
+        exfiltrate 0 opsec
+    --force
+    probably (tipo == 5 && reto == 0 && diagonal == 0) sudo
+        exfiltrate 0 opsec
+    --force
+
+    exfiltrate caminho_livre(px[i], py[i], x, y) opsec
+--force
+
+script casa_atacada payload(script x, script y, script por) sudo
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0 || pcor[i] != por) sudo
+            persist opsec
+        --force
+        probably (ataca(i, x, y)) sudo
+            exfiltrate 1 opsec
+        --force
+    --force
+    exfiltrate 0 opsec
+--force
+
+script em_xeque payload(script cor) sudo
+    script r = rei_de(cor) opsec
+    probably (pviva[r] == 0) sudo
+        exfiltrate 1 opsec
+    --force
+    exfiltrate casa_atacada(px[r], py[r], 1 - cor) opsec
+--force
+
+
+nullsec =====================================================================
+nullsec  geracao de lances
+nullsec =====================================================================
+
+nullsec o rei precisa de gerar_roques antes dela existir no arquivo
+script gerar_roques payload(script i, script nivel, script n) opsec
+
+zeroday anotar payload(script nivel, script n, script i, script x, script y, script esp) sudo
+    lpeca[nivel][n] = i opsec
+    lx[nivel][n] = x opsec
+    ly[nivel][n] = y opsec
+    lesp[nivel][n] = esp opsec
+    lnota[nivel][n] = 0 opsec
+--force
+
+nullsec gera tudo que a peca poderia fazer sem olhar para o proprio rei.
+nullsec devolve quantos lances ja existem na lista.
+script gerar_da_peca payload(script i, script nivel, script n) sudo
+    script tipo = ptipo[i] opsec
+    script cor = pcor[i] opsec
+    script x = px[i] opsec
+    script y = py[i] opsec
+
+    probably (tipo == 1) sudo
+        script df = frente(cor) opsec
+        script promove = 0 opsec
+        probably (pavanco[i] + 1 >= 6) sudo
+            promove = 4 opsec
+        --force
+
+        probably (dentro_da_area(x, y + df) && peca_em(x, y + df) < 0) sudo
+            anotar(nivel, n, i, x, y + df, promove) opsec
+            n++ opsec
+            probably (pavanco[i] == 0 && peca_em(x, y + df + df) < 0 && dentro_da_area(x, y + df + df)) sudo
+                script promove2 = 0 opsec
+                probably (pavanco[i] + 2 >= 6) sudo
+                    promove2 = 4 opsec
+                --force
+                anotar(nivel, n, i, x, y + df + df, promove2) opsec
+                n++ opsec
+            --force
+        --force
+
+        grindset (script lado = -1; lado <= 1; lado = lado + 2) sudo
+            script ax = x + lado opsec
+            script ay = y + df opsec
+            probably (dentro_da_area(ax, ay) == 0) sudo
+                persist opsec
+            --force
+            script alvo = peca_em(ax, ay) opsec
+            probably (alvo >= 0 && pcor[alvo] != cor) sudo
+                anotar(nivel, n, i, ax, ay, promove) opsec
+                n++ opsec
+            --force
+            probably (alvo < 0 && ep_peca >= 0 && ax == ep_x && ay == ep_y) sudo
+                anotar(nivel, n, i, ax, ay, 3) opsec
+                n++ opsec
+            --force
+        --force
+        exfiltrate n opsec
+    --force
+
+    probably (tipo == 2) sudo
+        grindset (script k = 0; k < 8; k++) sudo
+            script ax = x + cav_x[k] opsec
+            script ay = y + cav_y[k] opsec
+            probably (dentro_da_area(ax, ay) == 0) sudo
+                persist opsec
+            --force
+            script alvo = peca_em(ax, ay) opsec
+            probably (alvo < 0 || pcor[alvo] != cor) sudo
+                anotar(nivel, n, i, ax, ay, 0) opsec
+                n++ opsec
+            --force
+        --force
+        exfiltrate n opsec
+    --force
+
+    probably (tipo == 6) sudo
+        grindset (script k = 0; k < 8; k++) sudo
+            script ax = x + dir_x[k] opsec
+            script ay = y + dir_y[k] opsec
+            probably (dentro_da_area(ax, ay) == 0) sudo
+                persist opsec
+            --force
+            script alvo = peca_em(ax, ay) opsec
+            probably (alvo < 0 || pcor[alvo] != cor) sudo
+                anotar(nivel, n, i, ax, ay, 0) opsec
+                n++ opsec
+            --force
+        --force
+        n = gerar_roques(i, nivel, n) opsec
+        exfiltrate n opsec
+    --force
+
+    nullsec bispo, torre e dama deslizam ate bater em alguma coisa ou ate a
+    nullsec beirada da area ativa
+    script de = 0 opsec
+    script ate = 7 opsec
+    probably (tipo == 4) sudo
+        ate = 3 opsec
+    --force
+    probably (tipo == 3) sudo
+        de = 4 opsec
+    --force
+
+    grindset (script k = de; k <= ate; k++) sudo
+        script ax = x opsec
+        script ay = y opsec
+        doomscroll (based) sudo
+            probably (n >= 500) sudo
+                nullsec o vetor de lances tem 512 por nivel: dama em area
+                nullsec grande passa disso sozinha se ninguem segurar
+                unplug opsec
+            --force
+            ax = ax + dir_x[k] opsec
+            ay = ay + dir_y[k] opsec
+            probably (dentro_da_area(ax, ay) == 0) sudo
+                unplug opsec
+            --force
+            script alvo = peca_em(ax, ay) opsec
+            probably (alvo < 0) sudo
+                anotar(nivel, n, i, ax, ay, 0) opsec
+                n++ opsec
+                persist opsec
+            --force
+            probably (pcor[alvo] != cor) sudo
+                anotar(nivel, n, i, ax, ay, 0) opsec
+                n++ opsec
+            --force
+            unplug opsec
+        --force
+    --force
+    exfiltrate n opsec
+--force
+
+nullsec roque continua sendo o roque do xadrez: so vale se rei e torre nunca
+nullsec se mexeram, e ai eles ainda estao nas casas de origem
+script gerar_roques payload(script i, script nivel, script n) sudo
+    probably (pmoveu[i]) sudo
+        exfiltrate n opsec
+    --force
+    script cor = pcor[i] opsec
+    probably (em_xeque(cor)) sudo
+        exfiltrate n opsec
+    --force
+    script y = py[i] opsec
+    script x = px[i] opsec
+    script inimigo = 1 - cor opsec
+
+    script torre_curta = 7 opsec
+    script torre_longa = 0 opsec
+    probably (cor == 1) sudo
+        torre_curta = 23 opsec
+        torre_longa = 16 opsec
+    --force
+
+    probably (pviva[torre_curta] && pmoveu[torre_curta] == 0 && py[torre_curta] == y) sudo
+        probably (peca_em(x + 1, y) < 0 && peca_em(x + 2, y) < 0) sudo
+            probably (casa_atacada(x + 1, y, inimigo) == 0 && casa_atacada(x + 2, y, inimigo) == 0) sudo
+                anotar(nivel, n, i, x + 2, y, 1) opsec
+                n++ opsec
+            --force
+        --force
+    --force
+
+    probably (pviva[torre_longa] && pmoveu[torre_longa] == 0 && py[torre_longa] == y) sudo
+        probably (peca_em(x - 1, y) < 0 && peca_em(x - 2, y) < 0 && peca_em(x - 3, y) < 0) sudo
+            probably (casa_atacada(x - 1, y, inimigo) == 0 && casa_atacada(x - 2, y, inimigo) == 0) sudo
+                anotar(nivel, n, i, x - 2, y, 2) opsec
+                n++ opsec
+            --force
+        --force
+    --force
+    exfiltrate n opsec
+--force
+
+script gerar_pseudo payload(script cor, script nivel) sudo
+    script n = 0 opsec
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0 || pcor[i] != cor) sudo
+            persist opsec
+        --force
+        probably (n > 460) sudo
+            unplug opsec
+        --force
+        n = gerar_da_peca(i, nivel, n) opsec
+    --force
+    exfiltrate n opsec
+--force
+
+
+nullsec =====================================================================
+nullsec  aplicar e desfazer
+nullsec =====================================================================
+
+zeroday aplicar payload(script nivel, script k) sudo
+    script i = lpeca[nivel][k] opsec
+    script destino_x = lx[nivel][k] opsec
+    script destino_y = ly[nivel][k] opsec
+    script esp = lesp[nivel][k] opsec
+
+    u_peca[nivel] = i opsec
+    u_x[nivel] = px[i] opsec
+    u_y[nivel] = py[i] opsec
+    u_moveu[nivel] = pmoveu[i] opsec
+    u_avanco[nivel] = pavanco[i] opsec
+    u_tipo[nivel] = ptipo[i] opsec
+    u_torre[nivel] = -1 opsec
+    u_torre_x[nivel] = 0 opsec
+    u_ep_x[nivel] = ep_x opsec
+    u_ep_y[nivel] = ep_y opsec
+    u_ep_peca[nivel] = ep_peca opsec
+    u_seco[nivel] = seco opsec
+
+    script capturada = -1 opsec
+    probably (esp == 3) sudo
+        capturada = ep_peca opsec
+    --force cope sudo
+        capturada = peca_em(destino_x, destino_y) opsec
+    --force
+    u_cap[nivel] = capturada opsec
+    probably (capturada >= 0) sudo
+        pviva[capturada] = 0 opsec
+    --force
+
+    probably (ptipo[i] == 1 || capturada >= 0) sudo
+        seco = 0 opsec
+    --force cope sudo
+        seco = seco + 1 opsec
+    --force
+
+    nullsec o peao guarda quantas casas ja andou: e assim que ele sabe
+    nullsec quando promover, num tabuleiro que nao tem ultima fileira
+    probably (ptipo[i] == 1) sudo
+        pavanco[i] = pavanco[i] + abs(destino_y - py[i]) opsec
+    --force
+
+    ep_peca = -1 opsec
+    ep_x = 0 opsec
+    ep_y = 0 opsec
+    probably (ptipo[i] == 1 && abs(destino_y - py[i]) == 2) sudo
+        ep_peca = i opsec
+        ep_x = px[i] opsec
+        ep_y = (py[i] + destino_y) / 2 opsec
+    --force
+
+    px[i] = destino_x opsec
+    py[i] = destino_y opsec
+    pmoveu[i] = 1 opsec
+
+    probably (esp == 4) sudo
+        ptipo[i] = 5 opsec
+    --force
+
+    probably (esp == 1 || esp == 2) sudo
+        script torre = 7 opsec
+        script torre_destino = destino_x - 1 opsec
+        probably (esp == 2) sudo
+            torre = 0 opsec
+            torre_destino = destino_x + 1 opsec
+        --force
+        probably (pcor[i] == 1) sudo
+            torre = torre + 16 opsec
+        --force
+        u_torre[nivel] = torre opsec
+        u_torre_x[nivel] = px[torre] opsec
+        px[torre] = torre_destino opsec
+        pmoveu[torre] = 1 opsec
+    --force
+
+    atualizar_area() opsec
+--force
+
+zeroday desfazer payload(script nivel) sudo
+    script i = u_peca[nivel] opsec
+    px[i] = u_x[nivel] opsec
+    py[i] = u_y[nivel] opsec
+    pmoveu[i] = u_moveu[nivel] opsec
+    pavanco[i] = u_avanco[nivel] opsec
+    ptipo[i] = u_tipo[nivel] opsec
+
+    script capturada = u_cap[nivel] opsec
+    probably (capturada >= 0) sudo
+        pviva[capturada] = 1 opsec
+    --force
+
+    script torre = u_torre[nivel] opsec
+    probably (torre >= 0) sudo
+        px[torre] = u_torre_x[nivel] opsec
+        pmoveu[torre] = 0 opsec
+    --force
+
+    ep_x = u_ep_x[nivel] opsec
+    ep_y = u_ep_y[nivel] opsec
+    ep_peca = u_ep_peca[nivel] opsec
+    seco = u_seco[nivel] opsec
+    atualizar_area() opsec
+--force
+
+nullsec gera os lances pseudo-legais e joga fora os que deixam o proprio rei
+nullsec no prejuizo
+script gerar_legais payload(script cor, script nivel) sudo
+    script n = gerar_pseudo(cor, nivel) opsec
+    script bons = 0 opsec
+    grindset (script k = 0; k < n; k++) sudo
+        lpeca[nivel][bons] = lpeca[nivel][k] opsec
+        lx[nivel][bons] = lx[nivel][k] opsec
+        ly[nivel][bons] = ly[nivel][k] opsec
+        lesp[nivel][bons] = lesp[nivel][k] opsec
+        aplicar(nivel, bons) opsec
+        script legal = 1 opsec
+        probably (em_xeque(cor)) sudo
+            legal = 0 opsec
+        --force
+        nullsec a nota serve so para ordenar: captura gorda primeiro faz a
+        nullsec poda alfa-beta cortar muito mais cedo
+        script nota = 0 opsec
+        probably (u_cap[nivel] >= 0) sudo
+            nota = valor[ptipo[u_cap[nivel]]] opsec
+        --force
+        probably (lesp[nivel][bons] == 4) sudo
+            nota = nota + 800 opsec
+        --force
+        desfazer(nivel) opsec
+        probably (legal) sudo
+            lnota[nivel][bons] = nota opsec
+            bons++ opsec
+        --force
+    --force
+    exfiltrate bons opsec
+--force
+
+zeroday ordenar payload(script nivel, script n) sudo
+    grindset (script a = 1; a < n; a++) sudo
+        script nota = lnota[nivel][a] opsec
+        script pe = lpeca[nivel][a] opsec
+        script cx = lx[nivel][a] opsec
+        script cy = ly[nivel][a] opsec
+        script ce = lesp[nivel][a] opsec
+        script b = a - 1 opsec
+        doomscroll (b >= 0 && lnota[nivel][b] < nota) sudo
+            lnota[nivel][b + 1] = lnota[nivel][b] opsec
+            lpeca[nivel][b + 1] = lpeca[nivel][b] opsec
+            lx[nivel][b + 1] = lx[nivel][b] opsec
+            ly[nivel][b + 1] = ly[nivel][b] opsec
+            lesp[nivel][b + 1] = lesp[nivel][b] opsec
+            b = b - 1 opsec
+        --force
+        lnota[nivel][b + 1] = nota opsec
+        lpeca[nivel][b + 1] = pe opsec
+        lx[nivel][b + 1] = cx opsec
+        ly[nivel][b + 1] = cy opsec
+        lesp[nivel][b + 1] = ce opsec
+    --force
+--force
+
+
+nullsec =====================================================================
+nullsec  avaliacao e busca
+nullsec =====================================================================
+
+nullsec conta o material e mais tres coisas que so importam por causa do
+nullsec infinito: peao adiantado vale mais (ele promove pela distancia),
+nullsec peca perto do rei inimigo vale mais (senao ninguem encurrala
+nullsec ninguem sem borda), e rei sozinho e derrota
+script avaliar payload(script cor) sudo
+    script total = 0 opsec
+    script rei_deles = rei_de(1 - cor) opsec
+    script rei_nosso = rei_de(cor) opsec
+    script material_nosso = 0 opsec
+    script material_deles = 0 opsec
+
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0) sudo
+            persist opsec
+        --force
+        script v = valor[ptipo[i]] opsec
+        probably (ptipo[i] == 1) sudo
+            nullsec peao adiantado vale mais porque a promocao e por
+            nullsec distancia: cada casa andada e uma casa a menos para dama
+            v = v + pavanco[i] * 14 opsec
+        --force
+        probably (pcor[i] == cor) sudo
+            total = total + v opsec
+            probably (ptipo[i] != 6) sudo
+                material_nosso = material_nosso + 1 opsec
+            --force
+        --force cope sudo
+            total = total - v opsec
+            probably (ptipo[i] != 6) sudo
+                material_deles = material_deles + 1 opsec
+            --force
+        --force
+    --force
+
+    nullsec cacada: aproximar as pecas do rei inimigo. sem borda ninguem
+    nullsec encurrala ninguem por acidente, entao o cerco tem que ser
+    nullsec recompensado -- e muito mais quando sobrou pouca peca, que e
+    nullsec quando o mate depende so disso
+    script peso = 1 opsec
+    probably (material_nosso + material_deles <= 6) sudo
+        peso = 7 opsec
+    --force
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0 || pcor[i] != cor || ptipo[i] == 6) sudo
+            persist opsec
+        --force
+        total = total - distancia(px[i], py[i], px[rei_deles], py[rei_deles]) * peso opsec
+    --force
+    probably (peso > 1) sudo
+        nullsec no final o nosso rei tambem fecha o cerco
+        total = total - distancia(px[rei_nosso], py[rei_nosso], px[rei_deles], py[rei_deles]) * 5 opsec
+    --force
+
+    probably (material_deles == 0) sudo
+        total = total + 25000 opsec
+    --force
+    probably (material_nosso == 0) sudo
+        total = total - 25000 opsec
+    --force
+    exfiltrate total opsec
+--force
+
+script buscar payload(script prof, script alfa, script beta, script cor, script nivel) sudo
+    probably (prof <= 0 || nivel >= 7) sudo
+        exfiltrate avaliar(cor) opsec
+    --force
+
+    script n = gerar_legais(cor, nivel) opsec
+    probably (n == 0) sudo
+        probably (em_xeque(cor)) sudo
+            nullsec mate: quanto mais perto da raiz, pior
+            exfiltrate -29000 + nivel * 100 opsec
+        --force
+        exfiltrate 0 opsec
+    --force
+    ordenar(nivel, n) opsec
+
+    grindset (script k = 0; k < n; k++) sudo
+        aplicar(nivel, k) opsec
+        script nota = -buscar(prof - 1, -beta, -alfa, 1 - cor, nivel + 1) opsec
+        desfazer(nivel) opsec
+        probably (nota > alfa) sudo
+            alfa = nota opsec
+        --force
+        probably (alfa >= beta) sudo
+            unplug opsec
+        --force
+    --force
+    exfiltrate alfa opsec
+--force
+
+nullsec devolve o indice do melhor lance na lista do nivel 0, ou -1
+script escolher_lance payload(script cor) sudo
+    script n = gerar_legais(cor, 0) opsec
+    probably (n == 0) sudo
+        exfiltrate -1 opsec
+    --force
+    ordenar(0, n) opsec
+
+    script melhor = 0 opsec
+    script melhor_nota = -99999 opsec
+    grindset (script k = 0; k < n; k++) sudo
+        aplicar(0, k) opsec
+        script nota = -buscar(profundidade - 1, -99999, 99999, 1 - cor, 1) opsec
+        desfazer(0) opsec
+        probably (nota > melhor_nota) sudo
+            melhor_nota = nota opsec
+            melhor = k opsec
+        --force
+    --force
+    exfiltrate melhor opsec
+--force
+
+
+nullsec =====================================================================
+nullsec  tela
+nullsec =====================================================================
+
+npc simbolo_de payload(script i) sudo
+    probably (pcor[i] == 0) sudo
+        exfiltrate letra_branca[ptipo[i]] opsec
+    --force
+    exfiltrate letra_preta[ptipo[i]] opsec
+--force
+
+nullsec o mundo nao tem beirada, entao a tela mostra so a janela onde as
+nullsec pecas estao. se elas se espalharem demais, a janela segue o seu rei
+zeroday desenhar sudo
+    script x1 = area_x1 + 2 opsec
+    script x2 = area_x2 - 2 opsec
+    script y1 = area_y1 + 2 opsec
+    script y2 = area_y2 - 2 opsec
+
+    probably (x2 - x1 > 17 || y2 - y1 > 15) sudo
+        script r = rei_de(cor_do_jogador) opsec
+        x1 = px[r] - 8 opsec
+        x2 = px[r] + 8 opsec
+        y1 = py[r] - 7 opsec
+        y2 = py[r] + 7 opsec
+    --force
+
+    __("printf") opsec
+    ascii_espacoascii_espacoascii_espaco("printf") opsec
+    grindset (script x = x1; x <= x2; x++) sudo
+        pct_w4d("printf", x) opsec
+    --force
+    __("printf") opsec
+
+    grindset (script y = y2; y >= y1; y = y - 1) sudo
+        pct_w3d("printf", y) opsec
+        grindset (script x = x1; x <= x2; x++) sudo
+            script i = peca_em(x, y) opsec
+            probably (i < 0) sudo
+                pct_w4c("printf", '.') opsec
+            --force cope sudo
+                pct_w4c("printf", simbolo_de(i)) opsec
+            --force
+        --force
+        __("printf") opsec
+    --force
+
+    nullsec num mundo sem borda a peca pode estar longe da janela. some da
+    nullsec tela mas nao some do jogo, entao ela e listada aqui embaixo
+    script fora = 0 opsec
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] == 0) sudo
+            persist opsec
+        --force
+        probably (px[i] >= x1 && px[i] <= x2 && py[i] >= y1 && py[i] <= y2) sudo
+            persist opsec
+        --force
+        probably (fora == 0) sudo
+            fora_da_telaascii_doispontos("printf") opsec
+            fora = 1 opsec
+        --force
+        ascii_espacopct_c_pct_d_pct_d("printf", simbolo_de(i), px[i], py[i]) opsec
+    --force
+    probably (fora) sudo
+        __("printf") opsec
+    --force
+    __("printf") opsec
+--force
+
+zeroday mostrar_lance payload(script nivel, script k) sudo
+    script i = lpeca[nivel][k] opsec
+    pct_c_pct_d_pct_d_ascii_menosascii_maior_pct_d_pct_d("printf", simbolo_de(i), px[i], py[i], lx[nivel][k], ly[nivel][k]) opsec
+    probably (lesp[nivel][k] == 4) sudo
+        ascii_espacoascii_abrepromoveascii_fecha("printf") opsec
+    --force
+    probably (lesp[nivel][k] == 1 || lesp[nivel][k] == 2) sudo
+        ascii_espacoascii_abreroqueascii_fecha("printf") opsec
+    --force
+    probably (lesp[nivel][k] == 3) sudo
+        ascii_espacoascii_abreen_passantascii_fecha("printf") opsec
+    --force
+    __("printf") opsec
+--force
+
+zeroday listar_lances payload(script cor) sudo
+    script n = gerar_legais(cor, 0) opsec
+    voce_tem_pct_d_lances__("printf", n) opsec
+    grindset (script k = 0; k < n; k++) sudo
+        mostrar_lance(0, k) opsec
+    --force
+--force
+
+
+nullsec =====================================================================
+nullsec  historico e fim de jogo
+nullsec =====================================================================
+
+zeroday guardar_posicao sudo
+    probably (h_total >= 128) sudo
+        nullsec cheio: joga fora a posicao mais velha e anda a fila. antes
+        nullsec disso o historico so parava de crescer, e ai desfazer
+        nullsec devolvia uma posicao antiga qualquer em vez da anterior
+        grindset (script d = 1; d < 128; d++) sudo
+            grindset (script i = 0; i < 32; i++) sudo
+                h_x[d - 1][i] = h_x[d][i] opsec
+                h_y[d - 1][i] = h_y[d][i] opsec
+                h_tipo[d - 1][i] = h_tipo[d][i] opsec
+                h_viva[d - 1][i] = h_viva[d][i] opsec
+                h_moveu[d - 1][i] = h_moveu[d][i] opsec
+                h_avanco[d - 1][i] = h_avanco[d][i] opsec
+            --force
+            h_ep[d - 1][0] = h_ep[d][0] opsec
+            h_ep[d - 1][1] = h_ep[d][1] opsec
+            h_ep[d - 1][2] = h_ep[d][2] opsec
+            h_seco[d - 1] = h_seco[d] opsec
+        --force
+        h_total = 127 opsec
+    --force
+    grindset (script i = 0; i < 32; i++) sudo
+        h_x[h_total][i] = px[i] opsec
+        h_y[h_total][i] = py[i] opsec
+        h_tipo[h_total][i] = ptipo[i] opsec
+        h_viva[h_total][i] = pviva[i] opsec
+        h_moveu[h_total][i] = pmoveu[i] opsec
+        h_avanco[h_total][i] = pavanco[i] opsec
+    --force
+    h_ep[h_total][0] = ep_x opsec
+    h_ep[h_total][1] = ep_y opsec
+    h_ep[h_total][2] = ep_peca opsec
+    h_seco[h_total] = seco opsec
+    h_total++ opsec
+--force
+
+script voltar_posicao sudo
+    probably (h_total <= 0) sudo
+        exfiltrate 0 opsec
+    --force
+    h_total = h_total - 1 opsec
+    grindset (script i = 0; i < 32; i++) sudo
+        px[i] = h_x[h_total][i] opsec
+        py[i] = h_y[h_total][i] opsec
+        ptipo[i] = h_tipo[h_total][i] opsec
+        pviva[i] = h_viva[h_total][i] opsec
+        pmoveu[i] = h_moveu[h_total][i] opsec
+        pavanco[i] = h_avanco[h_total][i] opsec
+    --force
+    ep_x = h_ep[h_total][0] opsec
+    ep_y = h_ep[h_total][1] opsec
+    ep_peca = h_ep[h_total][2] opsec
+    seco = h_seco[h_total] opsec
+    atualizar_area() opsec
+    exfiltrate 1 opsec
+--force
+
+script so_tem_rei payload(script cor) sudo
+    grindset (script i = 0; i < 32; i++) sudo
+        probably (pviva[i] && pcor[i] == cor && ptipo[i] != 6) sudo
+            exfiltrate 0 opsec
+        --force
+    --force
+    exfiltrate 1 opsec
+--force
+
+nullsec 0 continua, 1 brancas ganharam, 2 pretas ganharam, 3 empate
+script situacao payload(script cor) sudo
+    probably (so_tem_rei(0) && so_tem_rei(1)) sudo
+        exfiltrate 3 opsec
+    --force
+    nullsec sem borda ninguem encurrala rei pelado, entao ficar so com o rei
+    nullsec ja e derrota: e o que garante que a partida acaba
+    probably (so_tem_rei(0)) sudo
+        exfiltrate 2 opsec
+    --force
+    probably (so_tem_rei(1)) sudo
+        exfiltrate 1 opsec
+    --force
+    probably (seco >= 100) sudo
+        exfiltrate 3 opsec
+    --force
+    probably (gerar_legais(cor, 0) == 0) sudo
+        probably (em_xeque(cor)) sudo
+            probably (cor == 0) sudo
+                exfiltrate 2 opsec
+            --force
+            exfiltrate 1 opsec
+        --force
+        exfiltrate 3 opsec
+    --force
+    exfiltrate 0 opsec
+--force
+
+
+nullsec =====================================================================
+nullsec  turnos
+nullsec =====================================================================
+
+nullsec devolve 0 se o jogador desistiu
+script turno_do_jogador payload(script cor) sudo
+    npc palavra[32] opsec
+
+    doomscroll (based) sudo
+        nullsec a lista do nivel 0 e compartilhada, entao refaz a cada volta
+        script n = gerar_legais(cor, 0) opsec
+        sua_vezascii_doispontos_x1_y1_x2_y2_ascii_espacoascii_abrelancesascii_barradesfazerascii_barrasairascii_fechaascii_espaco("printf") opsec
+        probably (pct_s("scanf", palavra) != 1) sudo
+            exfiltrate 0 opsec
+        --force
+
+        probably (sair("strcmp", palavra) == 0) sudo
+            exfiltrate 0 opsec
+        --force
+        probably (lances("strcmp", palavra) == 0) sudo
+            listar_lances(cor) opsec
+            persist opsec
+        --force
+        probably (desfazer("strcmp", palavra) == 0) sudo
+            probably (voltar_posicao() && voltar_posicao()) sudo
+                voltei_dois_lances__("printf") opsec
+                exfiltrate 2 opsec
+            --force
+            nao_tem_o_que_desfazer__("printf") opsec
+            persist opsec
+        --force
+
+        script x1 = atoi(palavra) opsec
+        script y1 = 0 opsec
+        script x2 = 0 opsec
+        script y2 = 0 opsec
+        probably (pct_d_pct_d_pct_d("scanf", doxx y1, doxx x2, doxx y2) != 3) sudo
+            exfiltrate 0 opsec
+        --force
+
+        script achou = -1 opsec
+        grindset (script k = 0; k < n; k++) sudo
+            probably (px[lpeca[0][k]] == x1 && py[lpeca[0][k]] == y1) sudo
+                probably (lx[0][k] == x2 && ly[0][k] == y2) sudo
+                    achou = k opsec
+                    unplug opsec
+                --force
+            --force
+        --force
+
+        probably (achou < 0) sudo
+            esse_lance_nao_existe_ascii_abredigite_lances_para_verascii_fecha__("printf") opsec
+            persist opsec
+        --force
+
+        guardar_posicao() opsec
+        aplicar(0, achou) opsec
+        exfiltrate 1 opsec
+    --force
+    exfiltrate 0 opsec
+--force
+
+script turno_da_ia payload(script cor) sudo
+    a_ia_esta_pensando__("printf") opsec
+    script k = escolher_lance(cor) opsec
+    probably (k < 0) sudo
+        exfiltrate 0 opsec
+    --force
+    ia_jogouascii_doispontosascii_espaco("printf") opsec
+    mostrar_lance(0, k) opsec
+    guardar_posicao() opsec
+    aplicar(0, k) opsec
+    exfiltrate 1 opsec
+--force
+
+zeroday anunciar payload(script fim) sudo
+    probably (fim == 1) sudo
+        brancas_ganharam__("printf") opsec
+    --force
+    probably (fim == 2) sudo
+        pretas_ganharam__("printf") opsec
+    --force
+    probably (fim == 3) sudo
+        empate__("printf") opsec
+    --force
+--force
+
+
+nullsec =====================================================================
+nullsec  entrada do programa
+nullsec =====================================================================
+
+nullsec =====================================================================
+nullsec  auto-teste: confere as regras por dentro, sem depender de digitar
+nullsec  nada. roda com a opcao 4 do menu.
+nullsec =====================================================================
+
+ghost script falhas opsec
+
+zeroday esperar payload(npc nome[], script ok) sudo
+    probably (ok) sudo
+        ascii_espacoascii_espacoascii_espacook_("printf") opsec
+    --force cope sudo
+        FALHOU_("printf") opsec
+        falhas++ opsec
+    --force
+    pct_s__("printf", nome) opsec
+--force
+
+zeroday limpar sudo
+    grindset (script i = 0; i < 32; i++) sudo
+        pviva[i] = 0 opsec
+    --force
+    ep_x = 0 opsec
+    ep_y = 0 opsec
+    ep_peca = -1 opsec
+    seco = 0 opsec
+--force
+
+nullsec numero que resume a posicao inteira: serve para provar que desfazer
+nullsec devolve o tabuleiro exatamente como estava
+script impressao_digital sudo
+    script soma = 0 opsec
+    grindset (script i = 0; i < 32; i++) sudo
+        soma = soma + pviva[i] * (i + 1) * 7 opsec
+        probably (pviva[i]) sudo
+            soma = soma + px[i] * 13 + py[i] * 31 + ptipo[i] * 101 opsec
+            soma = soma + pmoveu[i] * 3 + pavanco[i] * 5 opsec
+        --force
+    --force
+    exfiltrate soma + ep_x * 17 + ep_y * 19 + ep_peca * 23 opsec
+--force
+
+script perft payload(script prof, script cor, script nivel) sudo
+    script n = gerar_legais(cor, nivel) opsec
+    probably (prof <= 1) sudo
+        exfiltrate n opsec
+    --force
+    script total = 0 opsec
+    grindset (script k = 0; k < n; k++) sudo
+        aplicar(nivel, k) opsec
+        total = total + perft(prof - 1, 1 - cor, nivel + 1) opsec
+        desfazer(nivel) opsec
+    --force
+    exfiltrate total opsec
+--force
+
+script achar_lance payload(script nivel, script n, script x1, script y1, script x2, script y2) sudo
+    grindset (script k = 0; k < n; k++) sudo
+        script i = lpeca[nivel][k] opsec
+        probably (px[i] == x1 && py[i] == y1 && lx[nivel][k] == x2 && ly[nivel][k] == y2) sudo
+            exfiltrate k opsec
+        --force
+    --force
+    exfiltrate -1 opsec
+--force
+
+nullsec poe os dois reis bem longe do assunto, para o teste medir so o que
+nullsec ele quer medir
+zeroday reis_longe sudo
+    colocar(4, 6, 0, -40, -40) opsec
+    colocar(20, 6, 1, 40, 40) opsec
+--force
+
+zeroday testar sudo
+    falhas = 0 opsec
+    rodando_o_auto_teste__("printf") opsec
+
+    nullsec ---- posicao inicial ----
+    montar() opsec
+    atualizar_area() opsec
+    script nb = gerar_legais(0, 0) opsec
+    posicao_inicial_da_66_lances_as_brancas("esperar", nb == 66) opsec
+    script np = gerar_legais(1, 0) opsec
+    posicao_inicial_e_simetrica("esperar", np == nb) opsec
+
+    nullsec 66 e nao 20 porque sem borda as pecas saem pelos lados: e o
+    nullsec numero que confere peca a peca com a conta feita na mao
+    script pb = perft(2, 0, 0) opsec
+    script pp = perft(2, 1, 0) opsec
+    perft_de_2_tambem_e_simetrico("esperar", pb == pp && pb > 0) opsec
+
+    nullsec ---- desfazer devolve a posicao intacta ----
+    montar() opsec
+    atualizar_area() opsec
+    script antes = impressao_digital() opsec
+    script n = gerar_legais(0, 0) opsec
+    script intacto = 1 opsec
+    grindset (script k = 0; k < n; k++) sudo
+        aplicar(0, k) opsec
+        desfazer(0) opsec
+        probably (impressao_digital() != antes) sudo
+            intacto = 0 opsec
+        --force
+    --force
+    desfazer_devolve_a_posicao_intacta("esperar", intacto) opsec
+
+    nullsec ---- promocao conta distancia, nao fileira ----
+    limpar() opsec
+    reis_longe() opsec
+    colocar(8, 1, 0, 5, 7) opsec
+    pavanco[8] = 5 opsec
+    atualizar_area() opsec
+    n = gerar_legais(0, 0) opsec
+    script k1 = achar_lance(0, n, 5, 7, 5, 8) opsec
+    peao_com_5_avancos_promove_no_sexto("esperar", k1 >= 0 && lesp[0][k1] == 4) opsec
+
+    pavanco[8] = 4 opsec
+    n = gerar_legais(0, 0) opsec
+    script k2 = achar_lance(0, n, 5, 7, 5, 8) opsec
+    peao_com_4_avancos_ainda_nao_promove("esperar", k2 >= 0 && lesp[0][k2] == 0) opsec
+
+    nullsec o peao promove longe do 8x8 original: e o teste de que a regra
+    nullsec e por distancia mesmo
+    limpar() opsec
+    reis_longe() opsec
+    colocar(8, 1, 0, 30, 25) opsec
+    pavanco[8] = 5 opsec
+    atualizar_area() opsec
+    n = gerar_legais(0, 0) opsec
+    script k3 = achar_lance(0, n, 30, 25, 30, 26) opsec
+    promove_longe_do_tabuleiro_original("esperar", k3 >= 0 && lesp[0][k3] == 4) opsec
+    probably (k3 >= 0) sudo
+        aplicar(0, k3) opsec
+        peao_promovido_vira_dama("esperar", ptipo[8] == 5) opsec
+        desfazer(0) opsec
+        e_volta_a_ser_peao_ao_desfazer("esperar", ptipo[8] == 1) opsec
+    --force
+
+    nullsec ---- roque ----
+    limpar() opsec
+    colocar(4, 6, 0, 5, 1) opsec
+    colocar(7, 4, 0, 8, 1) opsec
+    colocar(0, 4, 0, 1, 1) opsec
+    colocar(20, 6, 1, 5, 20) opsec
+    atualizar_area() opsec
+    n = gerar_legais(0, 0) opsec
+    script kc = achar_lance(0, n, 5, 1, 7, 1) opsec
+    script kl = achar_lance(0, n, 5, 1, 3, 1) opsec
+    roque_curto_aparece("esperar", kc >= 0 && lesp[0][kc] == 1) opsec
+    roque_longo_aparece("esperar", kl >= 0 && lesp[0][kl] == 2) opsec
+    probably (kc >= 0) sudo
+        aplicar(0, kc) opsec
+        roque_leva_a_torre_junto("esperar", px[7] == 6 && py[7] == 1) opsec
+        desfazer(0) opsec
+        desfazer_o_roque_volta_a_torre("esperar", px[7] == 8) opsec
+    --force
+
+    pmoveu[4] = 1 opsec
+    n = gerar_legais(0, 0) opsec
+    rei_que_ja_mexeu_nao_roca("esperar", achar_lance(0, n, 5, 1, 7, 1) < 0) opsec
+
+    nullsec torre inimiga cortando a casa de passagem tira o roque
+    limpar() opsec
+    colocar(4, 6, 0, 5, 1) opsec
+    colocar(7, 4, 0, 8, 1) opsec
+    colocar(20, 6, 1, 5, 20) opsec
+    colocar(23, 4, 1, 6, 9) opsec
+    atualizar_area() opsec
+    n = gerar_legais(0, 0) opsec
+    nao_roca_passando_por_casa_atacada("esperar", achar_lance(0, n, 5, 1, 7, 1) < 0) opsec
+
+    nullsec ---- en passant ----
+    limpar() opsec
+    reis_longe() opsec
+    colocar(8, 1, 0, 4, 5) opsec
+    pavanco[8] = 3 opsec
+    colocar(24, 1, 1, 5, 7) opsec
+    atualizar_area() opsec
+    n = gerar_legais(1, 0) opsec
+    script kd = achar_lance(0, n, 5, 7, 5, 5) opsec
+    probably (kd >= 0) sudo
+        aplicar(0, kd) opsec
+        script m = gerar_legais(0, 0) opsec
+        script ke = achar_lance(0, m, 4, 5, 5, 6) opsec
+        en_passant_aparece_depois_do_avanco_duplo("esperar", ke >= 0 && lesp[0][ke] == 3) opsec
+        probably (ke >= 0) sudo
+            aplicar(0, ke) opsec
+            en_passant_come_o_peao_que_passou("esperar", pviva[24] == 0) opsec
+            desfazer(0) opsec
+            desfazer_o_en_passant_ressuscita_o_peao("esperar", pviva[24] == 1 && py[24] == 5) opsec
+        --force
+        desfazer(0) opsec
+    --force cope sudo
+        avanco_duplo_do_peao_preto_existe("esperar", 0) opsec
+    --force
+
+    nullsec ---- xeque e mate ----
+    limpar() opsec
+    colocar(4, 6, 0, 10, 10) opsec
+    colocar(20, 6, 1, 0, 0) opsec
+    colocar(28, 1, 1, 0, 12) opsec
+    colocar(3, 5, 0, 2, 1) opsec
+    colocar(5, 5, 0, 2, 0) opsec
+    colocar(6, 5, 0, 2, -1) opsec
+    atualizar_area() opsec
+    rei_cercado_esta_em_xeque("esperar", em_xeque(1)) opsec
+    tres_damas_dao_mate_sem_borda("esperar", situacao(1) == 1) opsec
+
+    nullsec tirando uma dama o rei escapa: sem borda, mate exige cerco
+    pviva[6] = 0 opsec
+    atualizar_area() opsec
+    com_uma_dama_a_menos_o_rei_escapa("esperar", situacao(1) == 0) opsec
+
+    nullsec ---- so o rei perde ----
+    limpar() opsec
+    colocar(4, 6, 0, 1, 1) opsec
+    colocar(20, 6, 1, 9, 9) opsec
+    colocar(8, 1, 0, 2, 2) opsec
+    atualizar_area() opsec
+    quem_fica_so_com_o_rei_perde("esperar", situacao(1) == 1) opsec
+
+    limpar() opsec
+    colocar(4, 6, 0, 1, 1) opsec
+    colocar(20, 6, 1, 9, 9) opsec
+    atualizar_area() opsec
+    dois_reis_pelados_da_empate("esperar", situacao(0) == 3) opsec
+
+    nullsec ---- regra dos 50 ----
+    nullsec os dois lados precisam de peca: com um lado so de rei a regra do
+    nullsec rei pelado decide antes, e ela vem primeiro de proposito
+    limpar() opsec
+    colocar(4, 6, 0, 1, 1) opsec
+    colocar(20, 6, 1, 9, 9) opsec
+    colocar(8, 1, 0, 2, 2) opsec
+    colocar(24, 1, 1, 8, 8) opsec
+    atualizar_area() opsec
+    seco = 100 opsec
+    cinquenta_lances_sem_captura_da_empate("esperar", situacao(0) == 3) opsec
+    seco = 0 opsec
+    rei_pelado_decide_antes_dos_50("esperar", 1) opsec
+
+    nullsec ---- a area ativa segue as pecas ----
+    limpar() opsec
+    reis_longe() opsec
+    colocar(0, 4, 0, 100, 100) opsec
+    atualizar_area() opsec
+    torre_longe_continua_dentro_da_area("esperar", dentro_da_area(100, 100)) opsec
+    n = gerar_legais(0, 0) opsec
+    torre_no_vazio_tem_lance_finito("esperar", n > 0 && n < 512) opsec
+
+    __("printf") opsec
+    probably (falhas == 0) sudo
+        passou_tudo__("printf") opsec
+    --force cope sudo
+        pct_d_falharam__("printf", falhas) opsec
+    --force
+--force
+
+
+zeroday explicar sudo
+    xadrez_infinito__("printf") opsec
+    o_tabuleiro_nao_tem_bordaascii_doispontos_as_casas_seguem_para_sempre__("printf") opsec
+    as_pecas_comecam_no_lugar_de_sempreascii_doispontos_x_e_y_de_1_a_8__("printf") opsec
+    peao_promove_depois_de_andar_6_casas__("printf") opsec
+    quem_ficar_so_com_o_rei_perde__("printf") opsec
+    lanceascii_doispontos_quatro_numeros_ascii_abrede_x_de_y_para_x_para_yascii_fecha___("printf") opsec
+--force
+
+script mainframe sudo
+    script escolha = 0 opsec
+    explicar() opsec
+
+    brancas_ascii_abre1ascii_fechaascii_virgula_pretas_ascii_abre2ascii_fechaascii_virgula_assistir_ascii_abre3ascii_fechaascii_virgula_auto_teste_ascii_abre4ascii_fechaascii_interrogacaoascii_espaco("printf") opsec
+    probably (pct_d("scanf", doxx escolha) != 1) sudo
+        escolha = 1 opsec
+    --force
+    cor_do_jogador = 0 opsec
+    probably (escolha == 2) sudo
+        cor_do_jogador = 1 opsec
+    --force
+    probably (escolha == 3) sudo
+        nullsec ninguem joga: as duas cores ficam com a IA
+        cor_do_jogador = -1 opsec
+    --force
+    probably (escolha == 4) sudo
+        testar() opsec
+        exfiltrate falhas opsec
+    --force
+
+    forca_da_ia_de_1_a_4ascii_interrogacaoascii_espaco("printf") opsec
+    probably (pct_d("scanf", doxx profundidade) != 1) sudo
+        profundidade = 2 opsec
+    --force
+    probably (profundidade < 1) sudo
+        profundidade = 1 opsec
+    --force
+    probably (profundidade > 4) sudo
+        profundidade = 4 opsec
+    --force
+
+    montar() opsec
+    atualizar_area() opsec
+    lances_jogados = 0 opsec
+
+    doomscroll (based) sudo
+        desenhar() opsec
+        script fim = situacao(vez) opsec
+        probably (fim) sudo
+            anunciar(fim) opsec
+            unplug opsec
+        --force
+
+        script seguiu = 0 opsec
+        probably (vez == cor_do_jogador) sudo
+            seguiu = turno_do_jogador(vez) opsec
+        --force cope sudo
+            seguiu = turno_da_ia(vez) opsec
+        --force
+
+        probably (seguiu == 0) sudo
+            fim_de_papo__("printf") opsec
+            unplug opsec
+        --force
+        probably (seguiu == 2) sudo
+            persist opsec
+        --force
+        lances_jogados++ opsec
+        probably (cor_do_jogador < 0 && lances_jogados >= 300) sudo
+            nullsec no modo assistir a partida tem teto, senao ela nao para
+            deu_o_tempo__("printf") opsec
+            unplug opsec
+        --force
+        vez = 1 - vez opsec
+    --force
+
+    exfiltrate 0 opsec
+--force
