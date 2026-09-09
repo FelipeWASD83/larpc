@@ -196,7 +196,7 @@ por conta própria — cada um muda a linguagem e é decisão do Felipe.**
 
 1. ~~**Calculadora**~~ — feita, em `exemplos/calculadora.larp`.
 2. ~~**Jogo simples**~~ — virou coisa bem maior: `exemplos/xadrez.larp`, um
-   xadrez de tabuleiro infinito contra IA, com ~1200 linhas de LarpC. Ver
+   xadrez de tabuleiro infinito contra IA, com 1414 linhas de LarpC. Ver
    `exemplos/xadrez.md`. Foi ele que cobrou o `ascii_`, o `pct_w`, e que
    provou que a linguagem aguenta vetor 2D, recursão e programa grande.
 3. **"Sistema operacional"** — ambiente de desktop simulado dentro do Windows.
