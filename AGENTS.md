@@ -10,5 +10,5 @@ própria — parar aqui é ler dez linhas e ignorar as outras mil.
 
 Valem também as regras gerais da pasta, no `AGENTS.md` da raiz
 (`C:\Users\felipe\Downloads\Claude Code`): português do Brasil e direto ao ponto,
-plano antes de código não trivial, `python` e nunca `python3`, e commit só no
-fim de uma tarefa concluída — e só quando ele pedir.
+plano antes de código não trivial, `python` e nunca `python3`, e commit
+automático no fim de cada tarefa concluída, sem perguntar (exceto em projeto muito bobo).
