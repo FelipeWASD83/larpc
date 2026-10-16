@@ -90,3 +90,7 @@ compilador. Detalhes no `CLAUDE.md`.
 ```
 python -m unittest discover -s testes
 ```
+
+## Licença
+
+Código sob a licença MIT (arquivo `LICENSE`).
